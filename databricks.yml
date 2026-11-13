@@ -1,0 +1,52 @@
+bundle:
+  name: mlops-sentiment
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://databricks.com
+
+resources:
+  jobs:
+    retrain_sentiment:
+      name: retrain-sentiment
+      tasks:
+        - task_key: validate_data
+          spark_python_task:
+            python_file: ./src/01_validate_data.py
+          environment_key: Default
+        - task_key: train
+          depends_on:
+            - task_key: validate_data
+          spark_python_task:
+            python_file: ./src/02_train.py
+          environment_key: Default
+        - task_key: gate
+          depends_on:
+            - task_key: train
+          spark_python_task:
+            python_file: ./src/03_gate.py
+          environment_key: Default
+        - task_key: gate_check
+          depends_on:
+            - task_key: gate
+          condition_task:
+            op: EQUAL_TO
+            left: "{{tasks.gate.values.gate_passed}}"
+            right: "true"
+        - task_key: register
+          depends_on:
+            - task_key: gate_check
+              outcome: "true"
+          spark_python_task:
+            python_file: ./src/04_register.py
+          environment_key: Default
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "6"
+      performance_target: PERFORMANCE_OPTIMIZED
