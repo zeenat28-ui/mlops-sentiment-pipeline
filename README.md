@@ -25,15 +25,15 @@ This repository answers those four questions with a pipeline that was tested aga
 
 ```
             retrain job (Workflows)
-  validate_data -> train -> eval -> gate_check -> register
-                                        |            |
-                                  fail: stop     pass: new version
-                                                 gets @challenger
-                                                       |
-                         promote job (separate, manually triggered)
-                                                       |
+  unit_tests -> validate_data -> train -> gate -> gate_check -> register
+                                             |            |
+                                       fail: stop     pass: new version
+                                                      gets @challenger
+                                                            |
+                         promote script (run manually)
+                                                            |
             compare metric -> set @previous -> set @champion
-                                                       |
+                                                            |
                                   smoke test on @champion
                                      |                 |
                                    pass          fail: restore old
@@ -54,9 +54,10 @@ Aliases are pointers. Promotion and rollback move a pointer and do not copy or r
 
 ```
 config/
-  gate_v5.json        gate threshold used for real retraining
-  gate_test.json      gate threshold used for integration tests
+  gate_v5.json          gate threshold used for real retraining
+  gate_test.json        gate threshold used for integration tests
 src/
+  00_unit_tests.py      unit test runner for pipeline
   common.py             shared helpers
   01_validate_data.py   input data checks
   02_train.py           training and metric logging
@@ -66,6 +67,8 @@ src/
 tests/
   test_gate.py          unit tests (9 test cases)
 databricks.yml          multi-target pipeline (dev + integration_test)
+.github/workflows/
+  ci.yml                GitHub Actions CI (pytest on push/PR)
 ```
 
 ## Pipeline stages
@@ -80,7 +83,7 @@ The champion is served from the `sentiment-classifier` endpoint. Predictions on 
 A retrained version was released with a 90/10 traffic split before full rollout. A rollback drill moved the endpoint from v3 to v1 in 62 seconds and back to v3 in 158 seconds. This established a measured recovery time instead of an assumed one.
 
 ### 4. Automated retraining job
-A Workflows job runs `validate_data`, `train`, `eval`, `gate_check`, and `register` in order. Data checks run before training so bad input fails early.
+A Workflows job runs `unit_tests`, `validate_data`, `train`, `gate`, `gate_check`, and `register` in order. Unit tests run first to catch logic errors, then data checks run before training so bad input fails early.
 
 ### 5. Quality gate
 `gate_check` compares the evaluation metric (`gate_tweet_acc`) against a threshold stored in a config file. If the gate fails, the register task is skipped and no new version is created. Thresholds live in config so tests can change them without editing code.
@@ -89,7 +92,7 @@ A Workflows job runs `validate_data`, `train`, `eval`, `gate_check`, and `regist
 `04_register.py` only registers the version and sets `@challenger`. It never touches `@champion`. Registering and promoting are separate decisions with different risk, so they are separate tasks.
 
 ### 7. Controlled promotion
-`05_promote.py` runs as its own job, triggered manually. Its logic:
+`05_promote.py` is run manually as a standalone script (not yet configured as a separate Databricks job). Its logic:
 
 1. If there is no challenger, fail.
 2. If challenger and champion are the same version, exit without changes (idempotent).
@@ -139,12 +142,13 @@ Integration tests use a separate registered model (`_test` suffix) so that pipel
 
 - Runs on Databricks Free Edition. Features such as service principals and fine-grained permission controls may be limited and were not part of this work.
 - The model is a classical TF-IDF and logistic regression pipeline. No deep learning or GPU serving is included.
-- Promotion is manually triggered by design. There is no approval workflow beyond running the job.
-- Failure notifications on the promote job and a production dry-run of the promote step are still to be completed.
+- Promotion is manually triggered by running the Python script directly. There is no separate promote job defined in databricks.yml.
+- Email notifications on job failures must be configured separately in Databricks workspace settings.
+- CI/CD is limited to unit tests via GitHub Actions; deployment automation to Databricks is not yet implemented.
 
 ## Planned work
 
-1. CI/CD with GitHub Actions and Databricks Asset Bundles: lint and tests on pull requests, deploy to `_test` first, production behind manual approval.
+1. Extended CI/CD pipeline: Deploy bundles to `_test` via GitHub Actions on PR merge, with production deployment behind manual approval.
 2. Serving outside Databricks: pull `@champion` from the registry and serve it with FastAPI in a Docker container.
 3. Security controls: Unity Catalog grants on alias changes, secret scopes, image scanning, and an audit view built from promotion tags.
 4. Monitoring: latency, error rate, and prediction distribution metrics with a dashboard.
@@ -168,13 +172,13 @@ databricks bundle deploy -t integration_test
 databricks bundle run retrain_sentiment -t integration_test
 
 # Promote (preview only)
-python 05_promote.py --dry-run
+python src/05_promote.py --dry-run
 
 # Promote the test model
-python 05_promote.py --metric gate_tweet_acc --min-improvement 0.0
+python src/05_promote.py --metric gate_tweet_acc --min-improvement 0.0
 
 # Promote production (only after test drills pass)
-python 05_promote.py --model project1.mlops_sentiment.sentiment_classifier \
+python src/05_promote.py --model project1.mlops_sentiment.sentiment_classifier \
   --metric gate_tweet_acc --min-improvement 0.005 --dry-run
 ```
 

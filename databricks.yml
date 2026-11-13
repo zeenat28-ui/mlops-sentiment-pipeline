@@ -6,6 +6,8 @@ variables:
     default: project1.mlops_sentiment.sentiment_classifier
   config_name:
     default: gate_v5.json
+  notification_email:
+    default: zeenatriaz468@gmail.com
 
 targets:
   dev:
@@ -28,6 +30,9 @@ resources:
       queue:
         enabled: true
       performance_target: PERFORMANCE_OPTIMIZED
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
       environments:
         - environment_key: Default
           spec:
@@ -74,4 +79,23 @@ resources:
           spark_python_task:
             python_file: ./src/04_register.py
             parameters: ["--model", "${var.model_name}", "--config-name", "${var.config_name}"]
+          environment_key: Default
+
+    promote_sentiment:
+      name: promote-sentiment-${bundle.target}
+      queue:
+        enabled: true
+      performance_target: PERFORMANCE_OPTIMIZED
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "6"
+      tasks:
+        - task_key: promote
+          spark_python_task:
+            python_file: ./src/05_promote.py
+            parameters: ["--model", "${var.model_name}", "--metric", "gate_tweet_acc", "--min-improvement", "0.005"]
           environment_key: Default
