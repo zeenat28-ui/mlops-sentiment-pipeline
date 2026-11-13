@@ -30,7 +30,7 @@ This repository answers those four questions with a pipeline that was tested aga
                                        fail: stop     pass: new version
                                                       gets @challenger
                                                             |
-                         promote script (run manually)
+                         promote job (separate, manual trigger)
                                                             |
             compare metric -> set @previous -> set @champion
                                                             |
@@ -92,7 +92,7 @@ A Workflows job runs `unit_tests`, `validate_data`, `train`, `gate`, `gate_check
 `04_register.py` only registers the version and sets `@challenger`. It never touches `@champion`. Registering and promoting are separate decisions with different risk, so they are separate tasks.
 
 ### 7. Controlled promotion
-`05_promote.py` is run manually as a standalone script (not yet configured as a separate Databricks job). Its logic:
+`05_promote.py` runs as a separate Databricks job (`promote_sentiment`), triggered manually. Its logic:
 
 1. If there is no challenger, fail.
 2. If challenger and champion are the same version, exit without changes (idempotent).
@@ -142,8 +142,7 @@ Integration tests use a separate registered model (`_test` suffix) so that pipel
 
 - Runs on Databricks Free Edition. Features such as service principals and fine-grained permission controls may be limited and were not part of this work.
 - The model is a classical TF-IDF and logistic regression pipeline. No deep learning or GPU serving is included.
-- Promotion is manually triggered by running the Python script directly. There is no separate promote job defined in databricks.yml.
-- Email notifications on job failures must be configured separately in Databricks workspace settings.
+- Promotion is manually triggered via the `promote_sentiment` Databricks job. There is no automated approval workflow.
 - CI/CD is limited to unit tests via GitHub Actions; deployment automation to Databricks is not yet implemented.
 
 ## Planned work
@@ -171,7 +170,10 @@ databricks bundle deploy -t integration_test
 # Run integration test
 databricks bundle run retrain_sentiment -t integration_test
 
-# Promote (preview only)
+# Run promote job (manual)
+databricks bundle run promote_sentiment -t integration_test
+
+# Or promote via Python script directly
 python src/05_promote.py --dry-run
 
 # Promote the test model
