@@ -1,56 +1,125 @@
-# End-to-End MLOps Sentiment Pipeline on Databricks
+# MLOps Sentiment Pipeline
 
-A production-grade MLOps pipeline built on **Databricks (Unity Catalog, MLflow, Model Serving, Serverless Jobs)** and **GitHub Actions**, demonstrating the full lifecycle of a multi-domain sentiment classifier (Movie Reviews + Social Media Tweets).
+A governed model lifecycle for a sentiment classifier on Databricks: registry, serving, drift monitoring, gated retraining, canary release, controlled promotion, and automatic rollback. The model itself is deliberately simple (TF-IDF with logistic regression). The project is about what happens around the model.
+
+## Problem
+
+A sentiment classifier in production degrades when live data differs from training data. Retraining alone does not solve this. The harder questions are operational:
+
+- How do we stop a worse model from reaching production?
+- How do we release a new model without exposing all traffic to it?
+- If something breaks after release, how fast can we return to the last good model?
+- How do we test the whole pipeline without touching production?
+
+This repository answers those four questions with a pipeline that was tested against each failure path, not only the happy path.
+
+## Scope and environment
+
+- Platform: Databricks Free Edition (serverless compute)
+- Tracking and registry: MLflow with Unity Catalog
+- Registered models: `project1.mlops_sentiment.sentiment_classifier` (production) and `project1.mlops_sentiment.sentiment_classifier_test` (integration testing)
+- Serving: Databricks model serving endpoint `sentiment-classifier`
+- Orchestration: Databricks Workflows (Jobs)
 
 ## Architecture
-`Delta Tables (Unity Catalog)` → `Data Validation` → `MLflow Experiment Tracking` → `Config-Driven Quality Gate` → `Unity Catalog Model Registry (@champion / @challenger / @previous)` → `Model Serving REST API (Canary 90/10 & Rollback)` → `Drift Monitoring (PSI & OOV)` → `Automated Retraining DAG`
 
-## Key Milestones & Engineering Decisions
-
-### 1. Data Ingestion & Lineage (Unity Catalog)
-- Stored raw datasets in Unity Catalog Volumes and curated into Delta tables (`reviews_train`, `reviews_validation`, `reviews_test`, `tweets_train`, `tweets_validation`, `tweets_test`, `train_combined`).
-- Enforced automated schema, null, duplicate rate (`<= 0.5%`), and zero train/test leakage checks.
-- Logged Delta table versions into MLflow parameters for full reproducibility.
-
-### 2. Experiment Tracking & Evaluation Gates (v1 → v5.1)
-- **Baseline (`tfidf_bigram_C4`):** Achieved `74.86%` validation accuracy and `78.52%` test accuracy (`p95 latency = 9.7 ms`).
-- **Gate v1 → v2 Fix:** Discovered a two-sided `abs(val - test) <= 0.03` bug that penalized better test performance (`78.52% > 74.86%`). Fixed to a one-sided overfitting check (`val - test <= 0.03`).
-- **Gate v3 Fail (Domain Imbalance):** Retraining on unweighted combined data (`24,942` tweets vs `8,530` movies) improved tweet accuracy (`+17.4%`) but caused a `2.4%` drop on movie reviews (`> 2.0%` limit).
-- **Challenger v2 (`v2_mf50k_dw`):** Solved domain regression using `max_features=50,000` and domain-balanced sample weights (`~2.9x` weight on movie reviews), restoring movie test accuracy to `78.6%` while achieving `78.4%` on tweets.
-- **Gate v4 Waiver & Audit Trail:** `v2_mf50k_dw` narrowly missed the absolute `recall_gap <= 0.10` bar (`0.110` due to tweet class-prior shift: `71.6%` positive in train vs `37.4%` in test), whereas the existing champion itself had a `0.137` gap. Issued a documented human waiver (`waiver_approved_by`) paired with a 10% canary rollout. Lesson learned: always sanity-check new gates against the current champion first.
-- **Gate v5.1 Config & Unit Tests:** Extracted relative champion-vs-challenger thresholds into `config/gate_v5.json` and covered 9 edge cases with `pytest` in GitHub Actions CI.
-
-### 3. Production Serving, Canary Rollout & Rollback Drill
-- **Live REST API (`sentiment-classifier`):** Deployed on Databricks Model Serving (`p50 = 31 ms`, `p95 = 78 ms`).
-- **Environment Rebuild (`v2 → v3`):** Resolved a `pyarrow` container build conflict by pinning clean `pip_requirements` on the exact `v2_mf50k_dw` artifact (`rebuilt_from_version: 2`).
-- **Canary Rollout (90/10 Split):** Verified `0 / 300` errors, `100%` local-vs-endpoint prediction parity, and `32.2 ms` challenger p95 latency before promoting `v3` to `100%` (`@champion`) and tagging `v1` as `@previous`.
-- **Rollback Drill:** Measured live rollback (`v3 → v1` in **62s**) and re-promotion (`v1 → v3` in **158s**) with zero downtime.
-
-### 4. Drift Monitoring & Automated Retraining Pipeline
-- **Drift Detection:** Calibrated Population Stability Index (`PSI`) against a no-drift permutation baseline (`95th percentile = 0.224` for word count, `0.162` for OOV rate). Out-of-domain tweet traffic spiked OOV rate from `9.4%` to `38.8%` and dropped accuracy by `18%` (`79% → 61%`), triggering automated drift alerts.
-- **Serverless Workflows DAG:** Built a 5-task pipeline (`validate_data` → `train` → `gate` → `gate_check` → `register`) using Databricks `taskValues` and `condition_task` to automatically block non-improving models from registry promotion.
-
-## Repository Structure
 ```
-mlops-sentiment-pipeline/
-├── .github/workflows/ci.yml    # GitHub Actions CI (pytest)
-├── config/gate_v5.json         # Quality gate thresholds
-├── src/
-│   ├── common.py               # Shared utilities
-│   ├── 01_validate_data.py     # Data quality checks
-│   ├── 02_train.py             # Model training
-│   ├── 03_gate.py              # Quality gate evaluation
-│   └── 04_register.py          # Model registry promotion
-├── tests/test_gate.py          # Unit tests (9 test cases)
-├── databricks.yml              # Serverless job DAG
-└── README.md
+            retrain job (Workflows)
+  validate_data -> train -> eval -> gate_check -> register
+                                        |            |
+                                  fail: stop     pass: new version
+                                                 gets @challenger
+                                                       |
+                         promote job (separate, manually triggered)
+                                                       |
+            compare metric -> set @previous -> set @champion
+                                                       |
+                                  smoke test on @champion
+                                     |                 |
+                                   pass          fail: restore old
+                                                 @champion, fail job
 ```
+
+Aliases used in the registry:
+
+| Alias | Meaning |
+|---|---|
+| `@challenger` | Newest registered candidate. Not serving traffic through promotion yet. |
+| `@champion` | The version considered the production standard. |
+| `@previous` | The prior champion, kept as the rollback target. |
+
+Aliases are pointers. Promotion and rollback move a pointer and do not copy or rebuild a model.
+
+## Repository layout
+
+```
+config/
+  gate_v5.json        gate threshold used for real retraining
+  gate_test.json      gate threshold used for integration tests
+src/
+  common.py             shared helpers
+  01_validate_data.py   input data checks
+  02_train.py           training and metric logging
+  03_gate.py            quality gate on the evaluation metric
+  04_register.py        registers a version and sets @challenger
+  05_promote.py         challenger to champion, with rollback logic
+tests/
+  test_gate.py          unit tests (9 test cases)
+databricks.yml          multi-target pipeline (dev + integration_test)
+```
+
+## Pipeline stages
+
+### 1. Registry and versioning
+Every trained model is logged to MLflow and registered in Unity Catalog, so each version has a run, metrics, and lineage back to the code that produced it.
+
+### 2. Serving and drift monitoring
+The champion is served from the `sentiment-classifier` endpoint. Predictions on tweet-style text are monitored to detect drift from the original training distribution. Drift is the trigger for retraining.
+
+### 3. Canary release and rollback drill
+A retrained version was released with a 90/10 traffic split before full rollout. A rollback drill moved the endpoint from v3 to v1 in 62 seconds and back to v3 in 158 seconds. This established a measured recovery time instead of an assumed one.
+
+### 4. Automated retraining job
+A Workflows job runs `validate_data`, `train`, `eval`, `gate_check`, and `register` in order. Data checks run before training so bad input fails early.
+
+### 5. Quality gate
+`gate_check` compares the evaluation metric (`gate_tweet_acc`) against a threshold stored in a config file. If the gate fails, the register task is skipped and no new version is created. Thresholds live in config so tests can change them without editing code.
+
+### 6. Register does not mean promote
+`04_register.py` only registers the version and sets `@challenger`. It never touches `@champion`. Registering and promoting are separate decisions with different risk, so they are separate tasks.
+
+### 7. Controlled promotion
+`05_promote.py` runs as its own job, triggered manually. Its logic:
+
+1. If there is no challenger, fail.
+2. If challenger and champion are the same version, exit without changes (idempotent).
+3. Compare the chosen metric. Reject unless the challenger beats the champion by at least `--min-improvement`.
+4. Set `@previous` to the current champion first, then set `@champion` to the challenger. This order means a crash between the two steps still leaves a rollback target.
+5. Tag the promoted version with `promoted_at` and `promoted_from`.
+6. Load `models:/<name>@champion` and run a smoke test prediction.
+7. If the smoke test fails, restore the old champion and exit with an error so job failure notifications fire.
+
+Flags: `--model` (defaults to the `_test` model so production is never targeted by accident), `--metric`, `--min-improvement`, `--dry-run`.
+
+## Verification
+
+Each guarantee was tested with an explicit scenario. Registry state was captured before and after each run.
+
+| Scenario | Setup | Observed result |
+|---|---|---|
+| Happy path | Integration job on the `_test` model, gate passes | Version 2 registered, `@challenger` set, `@champion` unchanged |
+| Gate failure | Gate threshold raised above achievable accuracy | Register task skipped, `_test` versions unchanged, aliases unchanged |
+| Production isolation | Snapshot of production model before and after both runs | Aliases (`champion=3`, `challenger=3`, `previous=1`) and versions `[1, 2, 3]` identical |
+| Promotion | Promote job on `_test` | `champion=2`, `previous=1`, `challenger=2`; smoke test returned `[1, 0]` for one positive and one negative sample |
+| Automatic rollback | Smoke test forced to fail after promotion | Log shows `PROMOTED`, `SMOKE TEST FAILED`, `AUTO-ROLLBACK`; `@champion` returned to v1; job ended red |
+
+Integration tests use a separate registered model (`_test` suffix) so that pipeline experiments cannot change production aliases.
 
 ## Tech Stack
 - **Platform:** Databricks (Unity Catalog, MLflow, Model Serving, Serverless Jobs)
 - **ML:** scikit-learn (TF-IDF + Logistic Regression)
 - **Data:** Delta Lake, PySpark
-- **CI/CD:** GitHub Actions, pytest
+- **CI/CD:** GitHub Actions, pytest, Databricks Asset Bundles
 - **Monitoring:** Population Stability Index (PSI), Out-of-Vocabulary (OOV) tracking
 
 ## Key Metrics
@@ -58,7 +127,62 @@ mlops-sentiment-pipeline/
 - **Latency:** p50 = 31ms, p95 = 78ms
 - **Deployment:** Zero-downtime canary rollout (90/10 → 100%)
 - **Rollback Time:** 62 seconds (live)
-- **Test Coverage:** 9 gate scenarios
+- **Test Coverage:** 9 gate scenarios with GitHub Actions CI
+
+## Findings worth noting
+
+- In the rollback drill, champion and challenger had identical metrics (0.7838) and the promote still ran. The comparison uses a strict less-than, so equal metrics pass when `--min-improvement` is `0.0`. For production, use a small positive value so a retrain with no real gain does not change the champion.
+- After a rollback, the tags `promoted_at` and `promoted_from` remain on the version that was rolled back. They should be removed or replaced with a `rolled_back_at` tag so the audit trail is accurate.
+- If `@previous` already pointed at an older version before a promote, a rollback currently leaves `@previous` pointing at the rolled-back champion. The previous value of `@previous` should be saved and restored.
+
+## Known limitations
+
+- Runs on Databricks Free Edition. Features such as service principals and fine-grained permission controls may be limited and were not part of this work.
+- The model is a classical TF-IDF and logistic regression pipeline. No deep learning or GPU serving is included.
+- Promotion is manually triggered by design. There is no approval workflow beyond running the job.
+- Failure notifications on the promote job and a production dry-run of the promote step are still to be completed.
+
+## Planned work
+
+1. CI/CD with GitHub Actions and Databricks Asset Bundles: lint and tests on pull requests, deploy to `_test` first, production behind manual approval.
+2. Serving outside Databricks: pull `@champion` from the registry and serve it with FastAPI in a Docker container.
+3. Security controls: Unity Catalog grants on alias changes, secret scopes, image scanning, and an audit view built from promotion tags.
+4. Monitoring: latency, error rate, and prediction distribution metrics with a dashboard.
+5. Shadow deployment: send mirrored traffic to the challenger and compare its outputs against the champion before promotion.
+
+## How to run
+
+Replace the placeholders with your workspace values.
+
+```bash
+# Authenticate with Databricks
+databricks auth login --host https://dbc-<your-workspace>.cloud.databricks.com
+
+# Validate bundle
+databricks bundle validate -t dev
+
+# Deploy integration test environment
+databricks bundle deploy -t integration_test
+
+# Run integration test
+databricks bundle run retrain_sentiment -t integration_test
+
+# Promote (preview only)
+python 05_promote.py --dry-run
+
+# Promote the test model
+python 05_promote.py --metric gate_tweet_acc --min-improvement 0.0
+
+# Promote production (only after test drills pass)
+python 05_promote.py --model project1.mlops_sentiment.sentiment_classifier \
+  --metric gate_tweet_acc --min-improvement 0.005 --dry-run
+```
+
+## Author
+
+Zeenat Riaz
+- GitHub: https://github.com/zeenat28-ui
+- LinkedIn: https://www.linkedin.com/in/zeenat-riaz-16339b3ab/
 
 ## License
 MIT
