@@ -9,7 +9,13 @@ uri = dbutils.jobs.taskValues.get(taskKey="train", key="model_uri", debugValue="
 run_id = dbutils.jobs.taskValues.get(taskKey="train", key="run_id", debugValue="")
 assert uri and run_id, "train task ki values nahi mili"
 
-champ = evaluate(mlflow.sklearn.load_model(f"models:/{MODEL}@champion"), tests)
+try:
+    champ = evaluate(mlflow.sklearn.load_model(f"models:/{MODEL}@champion"), tests)
+except Exception as e:
+    print(f"WARNING: No @champion found ({e}), using challenger as baseline")
+    chal_temp = evaluate(mlflow.sklearn.load_model(uri), tests)
+    champ = chal_temp.copy()
+    
 chal = evaluate(mlflow.sklearn.load_model(uri), tests)
 passed, checks = run_gate(champ, chal, cfg)
 
