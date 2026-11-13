@@ -1,11 +1,4 @@
+.databricks/
 __pycache__/
-*.py[cod]
-*$py.class
 .pytest_cache/
-*.egg-info/
-dist/
-build/
-.env
-.venv
-venv/
-.DS_Store
+*.pyc

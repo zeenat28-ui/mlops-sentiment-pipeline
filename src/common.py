@@ -1,9 +1,20 @@
-import json, time, numpy as np
+import argparse, json, pathlib, time
+import numpy as np
 from sklearn.metrics import accuracy_score, recall_score
 
 CATALOG, SCHEMA = "project1", "mlops_sentiment"
-MODEL = f"{CATALOG}.{SCHEMA}.sentiment_classifier"
-CFG_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/config/gate_v5.json"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+_p = argparse.ArgumentParser(allow_abbrev=False)
+_p.add_argument("--model", default=f"{CATALOG}.{SCHEMA}.sentiment_classifier")
+_p.add_argument("--config-name", default="gate_v5.json")
+_args, _ = _p.parse_known_args()
+MODEL = _args.model
+CFG_PATH = ROOT / "config" / _args.config_name
+
+# Safety guard: test config kabhi asli model par na chale
+if "test" in _args.config_name:
+    assert MODEL.endswith("_test"), "test config sirf *_test model ke saath chal sakti hai"
 
 def load_cfg():
     return json.load(open(CFG_PATH))
