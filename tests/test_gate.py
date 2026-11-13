@@ -43,4 +43,4 @@ def test_worse_bias_rejected():
     assert not passed(chal(tweet_acc=0.70, tweet_bias=0.12))
 
 def test_slow_model_rejected():
-    assert passed(chal(tweet_acc=0.70, p95_ms=150.0))
+    assert not passed(chal(tweet_acc=0.70, p95_ms=150.0))
