@@ -1,0 +1,16 @@
+{
+  "gate_version": "v5.1-integration-test",
+  "primary_domain": "tweet",
+  "secondary_domain": "movie",
+  "min_primary_gain": -1.0,
+  "max_secondary_drop": 0.02,
+  "recall_gap_slack": 0.02,
+  "bias_slack": 0.03,
+  "max_p95_ms": 100,
+  "max_duplicate_rate": 0.005,
+  "train_table": "train_combined",
+  "eval_tables": {
+    "movie": "reviews_test",
+    "tweet": "tweets_test"
+  }
+}

@@ -1,0 +1,7 @@
+# Trim this to what src/common.py and tests/test_gate.py actually import.
+pytest>=8
+ruff>=0.6
+numpy
+pandas
+scikit-learn
+mlflow

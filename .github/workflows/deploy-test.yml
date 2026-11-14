@@ -1,0 +1,68 @@
+name: deploy-test
+
+# Runs after a merge to main. Deploys the bundle to the test target, runs the
+# integration job on the _test model, and fails if production aliases changed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+  # Job key from databricks.yml - retrain_sentiment with integration_test target
+  INTEGRATION_JOB_KEY: retrain_sentiment
+
+jobs:
+  deploy-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Pin this action to a release tag or commit SHA before relying on it.
+      - uses: databricks/setup-cli@main
+
+      - name: Snapshot production registry (before)
+        run: python scripts/assert_prod_untouched.py snapshot before.json
+
+      - name: Validate and deploy bundle (integration_test target)
+        run: |
+          databricks bundle validate -t integration_test
+          databricks bundle deploy -t integration_test
+
+      - name: Run integration test job
+        run: databricks bundle run "$INTEGRATION_JOB_KEY" -t integration_test
+
+      - name: Snapshot production registry (after)
+        if: always()
+        run: python scripts/assert_prod_untouched.py snapshot after.json
+
+      - name: Assert production was not touched
+        run: python scripts/assert_prod_untouched.py compare before.json after.json
+
+      - name: Keep snapshots as evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-snapshots
+          path: |
+            before.json
+            after.json
