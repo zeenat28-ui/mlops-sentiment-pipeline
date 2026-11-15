@@ -1,4 +1,3 @@
-# Databricks notebook source
 import mlflow, mlflow.sklearn, numpy as np, pandas as pd
 from mlflow.models import infer_signature
 from sklearn.compose import ColumnTransformer

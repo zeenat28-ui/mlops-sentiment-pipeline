@@ -1,4 +1,3 @@
-# Databricks notebook source
 import mlflow, mlflow.sklearn
 from common import *
 

@@ -1,4 +1,3 @@
-# Databricks notebook source
 from common import *
 
 cfg = load_cfg()

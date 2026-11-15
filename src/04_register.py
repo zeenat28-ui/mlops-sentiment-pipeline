@@ -1,4 +1,3 @@
-# Databricks notebook source
 import mlflow
 from mlflow.tracking import MlflowClient
 from common import *
