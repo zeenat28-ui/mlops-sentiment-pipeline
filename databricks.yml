@@ -13,12 +13,8 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://databricks.com
   integration_test:
     mode: development
-    workspace:
-      host: https://databricks.com
     variables:
       model_name: project1.mlops_sentiment.sentiment_classifier_test
       config_name: gate_test.json
