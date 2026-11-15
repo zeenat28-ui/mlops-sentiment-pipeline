@@ -43,12 +43,16 @@ jobs:
       - name: Snapshot production registry (before)
         run: python scripts/assert_prod_untouched.py snapshot before.json
 
-      - name: Validate and deploy bundle (integration_test target)
-        run: |
-          databricks bundle validate -t integration_test
-          databricks bundle deploy -t integration_test
+      - name: Validate bundle
+        timeout-minutes: 3
+        run: databricks bundle validate -t integration_test --debug
+
+      - name: Deploy bundle
+        timeout-minutes: 8
+        run: databricks bundle deploy -t integration_test --debug
 
       - name: Run integration test job
+        timeout-minutes: 15
         run: databricks bundle run "$INTEGRATION_JOB_KEY" -t integration_test
 
       - name: Snapshot production registry (after)
