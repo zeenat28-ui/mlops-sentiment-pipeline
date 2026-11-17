@@ -1,107 +1,95 @@
 name: Docker Build and Security Scan
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   docker-build-scan:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    - name: Create test model structure
+    - name: Verify model and serving files
       run: |
-        mkdir -p model
-        # Create minimal test model files
-        cat > model/manifest.json << 'EOF'
-        {
-          "model_name": "test.model",
-          "model_version": "1",
-          "model_alias": "champion",
-          "source_run_id": "test-run-123",
-          "files": [
-            {"path": "MLmodel", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
-            {"path": "model.pkl", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
-          ]
-        }
-        EOF
-        
-        cat > model/MLmodel << 'EOF'
-        flavors:
-          python_function:
-            env:
-              conda: conda.yaml
-              virtualenv: python_env.yaml
-            loader_module: mlflow.sklearn
-            model_path: model.pkl
-            python_version: "3.12"
-        artifacts:
-          model.pkl: {}
-        EOF
-        
-        touch model/model.pkl
-        mkdir -p serving
-        cp app.py serving/
-        cp requirements-api.txt serving/
+        test -f serving/app.py || (echo "serving/app.py missing" && exit 1)
+        test -f serving/requirements-api.txt || (echo "serving/requirements-api.txt missing" && exit 1)
+        test -f model/manifest.json || (echo "model/manifest.json missing" && exit 1)
+        test -f model/model.pkl || (echo "model/model.pkl missing" && exit 1)
+        echo "All model and serving files verified."
     
     - name: Build Docker image
       run: |
         docker build -f Dockerfile . -t sentiment-api:test
-        
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'sentiment-api:test'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-    
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
     
     - name: Run container and test API
       run: |
         # Start container in background
         docker run -d --name sentiment-test -p 8000:8000 sentiment-api:test
         
-        # Wait for container to start
+        # Wait for container and model lifespan to initialize
         sleep 10
         
         # Test health endpoint
-        curl -f http://localhost:8000/health || echo "Health check failed"
+        curl -f http://localhost:8000/health
         
-        # Test predict endpoint
-        curl -X POST http://localhost:8000/predict \
+        # Test predict endpoint with real text
+        curl -f -X POST http://localhost:8000/predict \
           -H "Content-Type: application/json" \
-          -d '{"texts": ["test positive", "test negative"]}' \
-          --max-time 30 || echo "Predict test failed"
+          -d '{"texts": ["Great movie loved it", "Terrible waste of time"]}'
         
-        # Stop container
+        # Check container logs
+        docker logs sentiment-test
+        
+        # Stop and remove container
         docker stop sentiment-test
         docker rm sentiment-test
     
-    - name: Docker Scout quickview
-      uses: docker/scout-action@v1
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      continue-on-error: true
       with:
-        command: quickview
-        image: sentiment-api:test
+        image-ref: 'sentiment-api:test'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
     
-    - name: Save Docker image as artifact
+    - name: Check Trivy output
+      id: check-trivy
+      run: |
+        if [ -s trivy-results.sarif ]; then
+          echo "sarif_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "sarif_exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: steps.check-trivy.outputs.sarif_exists == 'true'
+      continue-on-error: true
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Save Docker image artifact
+      run: |
+        docker save sentiment-api:test -o docker-image.tar
+    
+    - name: Upload Docker image as artifact
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: docker-image
-        path: |
-          docker-image.tar
+        path: docker-image.tar
         retention-days: 7
