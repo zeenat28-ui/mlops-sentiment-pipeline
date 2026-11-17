@@ -75,11 +75,17 @@ def verify_model_integrity() -> dict:
             sys.exit(1)
 
         with open(file_path, "rb") as f:
-            file_hash = hashlib.sha256(f.read()).hexdigest()
+            content = f.read()
 
-        if file_hash != file_info["sha256"]:
+        raw_hash = hashlib.sha256(content).hexdigest()
+        # Cross-platform normalization for text metadata files (handles CRLF on Windows vs LF on Linux)
+        lf_hash = hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+        crlf_hash = hashlib.sha256(content.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")).hexdigest()
+        valid_hashes = {raw_hash, lf_hash, crlf_hash}
+
+        if file_info["sha256"] not in valid_hashes:
             logger.error(f"Hash mismatch for {file_path}: "
-                         f"expected {file_info['sha256'][:16]}..., got {file_hash[:16]}...")
+                         f"expected {file_info['sha256'][:16]}..., got {raw_hash[:16]}...")
             sys.exit(1)
 
         logger.debug(f"✓ {file_path} verified")
