@@ -1,6 +1,8 @@
 import argparse
-from datetime import datetime, timezone
-import mlflow, mlflow.sklearn
+from datetime import UTC, datetime
+
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from mlflow.tracking import MlflowClient
 from sklearn.metrics import accuracy_score
@@ -84,7 +86,7 @@ def main():
     client.set_registered_model_alias(name, "champion", challenger.version)
 
     client.set_model_version_tag(
-        name, challenger.version, "promoted_at", datetime.now(timezone.utc).isoformat()
+        name, challenger.version, "promoted_at", datetime.now(UTC).isoformat()
     )
     if old_champion is not None:
         client.set_model_version_tag(
@@ -110,7 +112,7 @@ def main():
             except Exception:
                 pass
         client.set_model_version_tag(
-            name, challenger.version, "rolled_back_at", datetime.now(timezone.utc).isoformat()
+            name, challenger.version, "rolled_back_at", datetime.now(UTC).isoformat()
         )
         raise RuntimeError("FAIL: promote rollback ho gaya, job red rakhi gayi taake alert chale.")
 

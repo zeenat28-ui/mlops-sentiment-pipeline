@@ -1,10 +1,13 @@
-import mlflow, mlflow.sklearn, numpy as np, pandas as pd
+import mlflow
+import mlflow.sklearn
+import numpy as np
 from mlflow.models import infer_signature
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, balanced_accuracy_score
+from sklearn.pipeline import Pipeline
+
 from common import *
 
 mlflow.set_registry_uri("databricks-uc")

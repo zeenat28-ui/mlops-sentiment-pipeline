@@ -1,0 +1,28 @@
+{
+  "model_name": "test.model",
+  "model_version": "1",
+  "model_alias": "champion",
+  "source_run_id": "test-run-123",
+  "files": [
+    {
+      "path": "conda.yaml",
+      "sha256": "3160b5d08c18dd7f855442226438a8d5a893d3e053c6fd65bcee6faf58c7094f"
+    },
+    {
+      "path": "MLmodel",
+      "sha256": "1676bcef51473ffa45d6bcfa000b8676d6ea2d57a101c4563da5a1e0bb50112c"
+    },
+    {
+      "path": "model.pkl",
+      "sha256": "0252b83786b54e3b6da20f5b7b68000592a611000c69609f420651b0b1a2d9a1"
+    },
+    {
+      "path": "python_env.yaml",
+      "sha256": "3cd8dc854b0c85a51463e5c7a7cd1f7dd5b0b5091347c19f961b8e31d536c2b2"
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "6a27202228f8b01b2da93a40ad0b781e76fafa78766234972f5ec621f731020a"
+    }
+  ]
+}

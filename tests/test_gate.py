@@ -1,4 +1,7 @@
-import json, pathlib, sys
+import json
+import pathlib
+import sys
+
 sys.path.insert(0, "src")
 from common import run_gate
 

@@ -1,7 +1,15 @@
-# Trim this to what src/common.py and tests/test_gate.py actually import.
+# Development dependencies
 pytest>=8
 ruff>=0.6
+
+# Model training dependencies
 numpy
 pandas
 scikit-learn
 mlflow
+
+# API serving dependencies (for testing)
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.0
+httpx==0.26.0

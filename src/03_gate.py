@@ -1,4 +1,6 @@
-import mlflow, mlflow.sklearn
+import mlflow
+import mlflow.sklearn
+
 from common import *
 
 mlflow.set_registry_uri("databricks-uc")

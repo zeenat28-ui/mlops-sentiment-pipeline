@@ -1,0 +1,29 @@
+# Commands for Testing CI Pipeline
+
+# 1. Create a new test branch
+cd "c:\Users\Zeenat\Downloads\files\mlops-sentiment-pipeline-main"
+git checkout -b test/verify-ci-pipeline
+
+# 2. Make a small test change
+echo "# CI/CD Pipeline Test" > TEST.md
+
+# 3. Commit the change
+git add TEST.md
+git commit -m "test: Verify CI pipeline works"
+
+# 4. Push the test branch
+git push -u origin test/verify-ci-pipeline
+
+# 5. Go to GitHub and create a Pull Request
+# URL: https://github.com/Entirework-blip/work/pulls
+# Click "New pull request"
+# Select: base: main <- compare: test/verify-ci-pipeline
+# Click "Create pull request"
+
+# 6. Watch the CI checks run automatically!
+# Expected checks:
+# ✅ Lint (ruff check)
+# ✅ Unit tests (pytest)
+# ✅ Bundle validate
+
+# 7. After all checks pass, merge the PR

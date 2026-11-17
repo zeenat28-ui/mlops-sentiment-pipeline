@@ -1,4 +1,8 @@
-import argparse, json, pathlib, time
+import argparse
+import json
+import pathlib
+import time
+
 import numpy as np
 from sklearn.metrics import accuracy_score, recall_score
 
