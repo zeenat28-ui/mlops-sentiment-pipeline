@@ -1,6 +1,14 @@
 # MLOps Sentiment Pipeline
 
-A governed model lifecycle for a sentiment classifier on Databricks: registry, serving, drift monitoring, gated retraining, canary release, controlled promotion, and automatic rollback. The model itself is deliberately simple (TF-IDF with logistic regression). The project is about what happens around the model.
+[![Live Service](https://img.shields.io/badge/Live_API-Render_Active-brightgreen)](https://mlops-sentiment-pipeline.onrender.com/docs)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-blue)](https://github.com/zeenat28-ui/mlops-sentiment-pipeline/actions)
+[![DAB](https://img.shields.io/badge/Orchestration-Databricks_Asset_Bundles-orange)](https://github.com/zeenat28-ui/mlops-sentiment-pipeline)
+[![Report](https://img.shields.io/badge/Master_Report-25_Proofs_Verified-success)](MLOPS_PRODUCTION_REPORT.md)
+
+A production-grade, governed model lifecycle for a sentiment classifier: Databricks Asset Bundles (DAB), Unity Catalog Model Registry, continuous PSI drift monitoring, multi-metric quality gates, canary release, timed rollback drills, and high-concurrency containerized FastAPI serving deployed live on Render Cloud.
+
+> 📖 **Full Certified Engineering Case Study:** See [MLOPS_PRODUCTION_REPORT.md](MLOPS_PRODUCTION_REPORT.md) for step-by-step documentation and 25 verified screenshots.
+> 🌐 **Live Public API & Swagger UI:** [https://mlops-sentiment-pipeline.onrender.com/docs](https://mlops-sentiment-pipeline.onrender.com/docs)
 
 ## Problem
 
@@ -145,13 +153,18 @@ Integration tests use a separate registered model (`_test` suffix) so that pipel
 - Promotion is manually triggered via the `promote_sentiment` Databricks job. There is no automated approval workflow.
 - CI/CD is limited to unit tests via GitHub Actions; deployment automation to Databricks is not yet implemented.
 
-## Planned work
+## Implemented MLOps Milestones (Completed)
 
-1. Extended CI/CD pipeline: Deploy bundles to `_test` via GitHub Actions on PR merge, with production deployment behind manual approval.
-2. Serving outside Databricks: pull `@champion` from the registry and serve it with FastAPI in a Docker container.
-3. Security controls: Unity Catalog grants on alias changes, secret scopes, image scanning, and an audit view built from promotion tags.
-4. Monitoring: latency, error rate, and prediction distribution metrics with a dashboard.
-5. Shadow deployment: send mirrored traffic to the challenger and compare its outputs against the champion before promotion.
+1. ✅ **CI/CD Deployment Automation:** Bundles deployed to `_test` via GitHub Actions on PR merge with before/after production registry snapshot isolation.
+2. ✅ **External High-Scale Serving:** Champion model pulled with cryptographic SHA-256 integrity and served live on Render Cloud with FastAPI/Docker at 193.8 RPS.
+3. ✅ **Canary Deployment & Disaster Recovery:** 90/10 traffic split and verified 62-second rollback MTTR.
+4. ✅ **Data Drift Detection:** Population Stability Index (PSI) with automated threshold alerting.
+5. ✅ **Governance Audit Trail:** Signed waiver audit tags in Unity Catalog.
+
+## Future Extensions
+
+1. Shadow deployment: send mirrored traffic to the challenger and compare its outputs against the champion before promotion.
+2. Unity Catalog fine-grained IAM grants on alias changes with enterprise service principals.
 
 ## How to run
 
