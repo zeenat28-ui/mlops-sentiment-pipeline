@@ -3,7 +3,7 @@ import hashlib
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -133,9 +133,8 @@ def test_tampered_file_rejection():
         test_file.write_text("tampered content")
         
         # Verify should fail
-        with patch("serving.app.MANIFEST_PATH", manifest_path), patch("serving.app.MODEL_DIR", tmp_path):
-            with pytest.raises(SystemExit):
-                verify_model_integrity()
+        with patch("serving.app.MANIFEST_PATH", manifest_path), patch("serving.app.MODEL_DIR", tmp_path), pytest.raises(SystemExit):
+            verify_model_integrity()
 
 def test_extra_file_rejection():
     """Test that extra files cause container to fail startup."""
@@ -168,6 +167,5 @@ def test_extra_file_rejection():
         extra_file.write_text("extra content")
         
         # Verify should fail
-        with patch("serving.app.MANIFEST_PATH", manifest_path), patch("serving.app.MODEL_DIR", tmp_path):
-            with pytest.raises(SystemExit):
-                verify_model_integrity()
+        with patch("serving.app.MANIFEST_PATH", manifest_path), patch("serving.app.MODEL_DIR", tmp_path), pytest.raises(SystemExit):
+            verify_model_integrity()

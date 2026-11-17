@@ -1,0 +1,58 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+scrape_configs:
+  # 1. FastAPI Container Model Serving Microservice
+  - job_name: "sentiment-api"
+    metrics_path: "/metrics"
+    scheme: "http"
+    static_configs:
+      - targets: ["sentiment-api-svc.mlops.svc.cluster.local:80"]
+        labels:
+          environment: "production"
+          service: "sentiment-inference"
+          tier: "serving"
+
+  # 2. Databricks Model Serving Runtime User-Metrics Exporter (as seen in container logs port 8081)
+  - job_name: "databricks-serving"
+    metrics_path: "/metrics"
+    scheme: "http"
+    static_configs:
+      - targets: ["localhost:8081"]
+        labels:
+          environment: "databricks-lakehouse"
+          endpoint: "sentiment-classifier-1"
+
+  # 3. Kubernetes Pod Monitoring
+  - job_name: "kubernetes-pods"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - mlops
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod_name

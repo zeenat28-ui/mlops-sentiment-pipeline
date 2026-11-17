@@ -4,16 +4,20 @@ Proves production readiness and throughput for high-scale traffic.
 """
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import concurrent.futures
-import time
 import statistics
+import time
+
 from fastapi.testclient import TestClient
+
 from serving.app import app
 
+
 def run_benchmark(num_requests=200, concurrency=10):
-    print(f"=== STARTING HIGH-LOAD CONCURRENCY BENCHMARK ===")
+    print("=== STARTING HIGH-LOAD CONCURRENCY BENCHMARK ===")
     print(f"Total Requests: {num_requests} | Concurrency Level: {concurrency}")
 
     latencies = []

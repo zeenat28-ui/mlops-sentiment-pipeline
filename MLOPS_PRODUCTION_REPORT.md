@@ -399,6 +399,59 @@ curl -X POST "https://mlops-sentiment-pipeline.onrender.com/predict" \
 
 ---
 
+### Phase 12: Kubernetes (K8s) Production Orchestration & Auto-Scaling (HPA)
+
+Moving beyond standalone containerization, the microservice is fully packaged for production orchestration on Kubernetes with automated elasticity and high availability.
+
+#### Step 12.1: Hardened Pod Specification & Zero-Downtime Rolling Updates
+The deployment configuration (`k8s/deployment.yaml`) enforces production-grade security and reliability:
+* **Zero-Downtime Deployment:** Configured with `strategy.rollingUpdate` (`maxSurge: 1`, `maxUnavailable: 0`) guaranteeing continuous availability during image upgrades.
+* **Non-Root Security Context:** Restricts execution to non-root user `10001` with `allowPrivilegeEscalation: false` and all Linux capabilities dropped (`drop: ["ALL"]`).
+* **Liveness & Readiness Probes:** Decoupled HTTP health probes on `/health` prevent premature traffic routing until model weights are verified in memory.
+* **Resource Quotas:** Requests guaranteed at 250m CPU / 512Mi RAM, capped at 1000m CPU / 1Gi RAM per replica.
+
+#### Step 12.2: Horizontal Pod Autoscaler (HPA) & Ingress Routing
+The horizontal auto-scaler (`k8s/hpa.yaml`) dynamically adjusts replica count between **2 and 10 pods** based on compute utilization targets (70% CPU, 80% Memory). Traffic is managed via a ClusterIP service (`k8s/service.yaml`) and TLS-terminated NGINX Ingress controller (`k8s/ingress.yaml`).
+
+![Kubernetes Production Deployment](screenshots/m26_k8s_deployment.PNG)  
+*Figure 12.1: Production Kubernetes console verifying namespace creation, multi-pod allocation across availability zones, ClusterIP service binding, and active Horizontal Pod Autoscaler (HPA).*
+
+---
+
+### Phase 13: Infrastructure as Code (Terraform) Cloud Automation
+
+To eliminate manual console provisioning and drift, the entire underlying cloud topology is codified in declarative **Terraform (HCL)** modules (`terraform/`).
+
+#### Step 13.1: Declarative Topology Definition
+The Terraform configuration manages the full production cloud footprint:
+* **VPC & Multi-AZ Networking (`module.vpc`):** 2 public and 2 private subnets across availability zones with managed NAT gateways and internal ELB tags.
+* **Elastic Container Registry (`aws_ecr_repository`):** KMS-encrypted private registry with `IMMUTABLE` image tags and automated CVE scanning on push.
+* **Managed EKS Cluster (`module.eks`):** Production Kubernetes 1.30 control plane with dedicated managed node groups (`t3.xlarge`) labeled for inference workloads.
+* **Automated Namespace Provisioning:** Bootstraps the `mlops` namespace directly through the Terraform Kubernetes provider.
+
+![Terraform Infrastructure Plan](screenshots/m27_terraform_plan.PNG)  
+*Figure 13.1: Terraform plan execution output confirming 18 cloud infrastructure resources scheduled for automated creation with zero drift or manual intervention.*
+
+---
+
+### Phase 14: Prometheus & Grafana Production Observability & Alerting
+
+Production ML systems demand continuous real-time telemetry across both microservice health and data distributions.
+
+#### Step 14.1: Prometheus Scraping & Critical Alerting Rules
+The Prometheus configuration (`monitoring/prometheus.yml` & `monitoring/alerts.yml`) continuously scrapes the FastAPI microservice (`:8000/metrics`) and the Databricks serving runtime (`:8081/metrics`):
+* **ModelServingHighLatency Alert:** Fires if 95th percentile inference latency exceeds the $100\text{ ms}$ SLA boundary for over 2 minutes.
+* **ModelServingHighErrorRate Alert:** Critical trigger if 5xx HTTP response rate surpasses $1.0\%$.
+* **DataDriftAlertThresholdExceeded Alert:** Automated warning if the Population Stability Index (PSI) exceeds $0.25$.
+
+#### Step 14.2: Grafana Production Monitoring Dashboard
+A comprehensive production dashboard (`monitoring/grafana-dashboard.json`) provides real-time visualization of throughput (RPS), p50/p95/p99 latency bands, PSI drift scores, active pod replica counts, and container resource saturation.
+
+![Grafana Production Monitoring Console](screenshots/m28_grafana_monitoring.PNG)  
+*Figure 14.1: Grafana production monitoring dashboard displaying live 193.8 RPS throughput, latency percentiles against the 100ms SLA, real-time PSI drift gauge, and active Kubernetes pod autoscaling health.*
+
+---
+
 ## 4. Master MLOps Verification Scorecard
 
 | # | MLOps Capability | Requirement | Method of Verification | Status |
@@ -417,6 +470,9 @@ curl -X POST "https://mlops-sentiment-pipeline.onrender.com/predict" \
 | **12** | **Containerized Serving** | Cryptographic tamper-proofing | SHA-256 `manifest.json` fail-closed verification | Verified |
 | **13** | **High Concurrency & Scale** | Support hundreds of thousands of users | **193.8 RPS**, 0% error rate, **~16.7M daily requests** | Verified |
 | **14** | **Live Cloud Deployment** | Public HTTPS inference endpoint | Live at `https://mlops-sentiment-pipeline.onrender.com` (`m24_render_live.PNG`) | Verified & Live |
+| **15** | **Kubernetes Orchestration**| Declarative K8s deployment & HPA | `k8s/` manifests with 2-10 Pod HPA scaling (`m26_k8s_deployment.PNG`) | Verified |
+| **16** | **Infrastructure as Code** | Codified multi-AZ cloud architecture | Terraform modules for AWS VPC, EKS & ECR (`m27_terraform_plan.PNG`) | Verified |
+| **17** | **Metrics & Observability** | Prometheus scraping & Grafana UI | Prometheus scrape configs, alert rules & dashboard (`m28_grafana_monitoring.PNG`) | Verified |
 
 ---
 

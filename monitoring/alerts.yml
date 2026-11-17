@@ -1,0 +1,42 @@
+groups:
+  - name: mlops_sentiment_alerts
+    rules:
+      - alert: ModelServingHighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.100
+        for: 2m
+        labels:
+          severity: critical
+          tier: serving
+        annotations:
+          summary: "Inference Latency SLA Breached (>100ms)"
+          description: "95th percentile inference latency is {{ $value }}s, exceeding the 100ms production SLA limit."
+
+      - alert: ModelServingHighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[2m])) / sum(rate(http_requests_total[2m])) > 0.01
+        for: 1m
+        labels:
+          severity: critical
+          tier: serving
+        annotations:
+          summary: "High Serving Error Rate (>1%)"
+          description: "Inference 5xx error rate has risen to {{ $value | humanizePercentage }}."
+
+      - alert: DataDriftAlertThresholdExceeded
+        expr: mlops_psi_drift_score > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          tier: monitoring
+        annotations:
+          summary: "Significant Data Drift Detected via PSI"
+          description: "Population Stability Index (PSI) score {{ $value }} exceeds threshold 0.25, indicating significant distribution shift."
+
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[5m]) * 60 > 2
+        for: 2m
+        labels:
+          severity: critical
+          tier: infrastructure
+        annotations:
+          summary: "Kubernetes Serving Pod CrashLooping"
+          description: "Pod {{ $labels.pod }} in namespace mlops is restarting repeatedly."

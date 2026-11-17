@@ -2,12 +2,14 @@
 
 [![Live Service](https://img.shields.io/badge/Live_API-Render_Active-brightgreen)](https://mlops-sentiment-pipeline.onrender.com/docs)
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-blue)](https://github.com/zeenat28-ui/mlops-sentiment-pipeline/actions)
-[![DAB](https://img.shields.io/badge/Orchestration-Databricks_Asset_Bundles-orange)](https://github.com/zeenat28-ui/mlops-sentiment-pipeline)
-[![Report](https://img.shields.io/badge/Master_Report-25_Proofs_Verified-success)](MLOPS_PRODUCTION_REPORT.md)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Manifests_%26_HPA-326CE5?logo=kubernetes&logoColor=white)](k8s/)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform_EKS-844FBA?logo=terraform&logoColor=white)](terraform/)
+[![Prometheus](https://img.shields.io/badge/Observability-Prometheus_%26_Grafana-E6522C?logo=prometheus&logoColor=white)](monitoring/)
+[![Report](https://img.shields.io/badge/Master_Report-28_Proofs_Verified-success)](MLOPS_PRODUCTION_REPORT.md)
 
 A production-grade, governed model lifecycle for a sentiment classifier: Databricks Asset Bundles (DAB), Unity Catalog Model Registry, continuous PSI drift monitoring, multi-metric quality gates, canary release, timed rollback drills, and high-concurrency containerized FastAPI serving deployed live on Render Cloud.
 
-> 📖 **Full Certified Engineering Case Study:** See [MLOPS_PRODUCTION_REPORT.md](MLOPS_PRODUCTION_REPORT.md) for step-by-step documentation and 25 verified screenshots.
+> 📖 **Full Certified Engineering Case Study:** See [MLOPS_PRODUCTION_REPORT.md](MLOPS_PRODUCTION_REPORT.md) for step-by-step documentation and 28 verified screenshots.
 > 🌐 **Live Public API & Swagger UI:** [https://mlops-sentiment-pipeline.onrender.com/docs](https://mlops-sentiment-pipeline.onrender.com/docs)
 
 ## Problem
