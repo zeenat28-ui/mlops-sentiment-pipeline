@@ -342,6 +342,49 @@ p99 Latency:           119.01 ms
 
 ---
 
+### Phase 11: Live Production Cloud Serving & Public Endpoint Verification
+
+The final engineering milestone was bringing the model to a live, globally accessible public endpoint without requiring local compute or local Docker overhead. The containerized microservice was deployed directly from GitHub onto **Render Cloud**.
+
+#### Step 11.1: Live Deployment Verification
+The container booted successfully in 1m 9s from commit `9a068a1`, validating cross-platform cryptographic integrity, binding dynamically to port 10000, and launching the live production endpoint.
+
+![Render Live Deployment](screenshots/m24_render_live.PNG)
+*Figure 11.1: Render Cloud deployment console confirming status: `Deploy succeeded | Live`.*
+
+#### Step 11.2: Real-World Public API Verification (Empirical Proof)
+The live endpoint was tested over public HTTPS:
+
+**1. Live Health Probe:**
+```bash
+curl -s https://mlops-sentiment-pipeline.onrender.com/health
+```
+```json
+{"status": "healthy", "model_loaded": true}
+```
+
+**2. Live Real-Time Sentiment Prediction:**
+```bash
+curl -X POST "https://mlops-sentiment-pipeline.onrender.com/predict" \
+  -H "Content-Type: application/json" \
+  -d '{"texts": [
+    "The product quality exceeded all my expectations, absolutely wonderful!",
+    "Worst customer service ever, completely unresponsive and useless."
+  ]}'
+```
+```json
+{
+  "predictions": [1, 0],
+  "model_version": "1",
+  "model_alias": "champion"
+}
+```
+
+* **Interactive Public Swagger UI:** [mlops-sentiment-pipeline.onrender.com/docs](https://mlops-sentiment-pipeline.onrender.com/docs)
+* **Live Prediction Endpoint:** `https://mlops-sentiment-pipeline.onrender.com/predict`
+
+---
+
 ## 4. Master MLOps Verification Scorecard
 
 | # | MLOps Capability | Requirement | Method of Verification | Status |
@@ -359,6 +402,7 @@ p99 Latency:           119.01 ms
 | **11** | **Incident Alerting** | Automated email dispatch on error | Databricks email notifications (`failuremail.PNG`) | ✅ **Verified** |
 | **12** | **Containerized Serving** | Cryptographic tamper-proofing | SHA-256 `manifest.json` fail-closed verification | ✅ **Verified** |
 | **13** | **High Concurrency & Scale** | Support hundreds of thousands of users | **193.8 RPS**, 0% error rate, **~16.7M daily requests** | ✅ **Verified** |
+| **14** | **Live Cloud Deployment** | Public HTTPS inference endpoint | Live at `https://mlops-sentiment-pipeline.onrender.com` (`m24_render_live.PNG`) | ✅ **Verified & Live** |
 
 ---
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import mlflow.pyfunc
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 
 # Constants
@@ -137,6 +137,11 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 # Routes
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root to interactive Swagger UI documentation."""
+    return RedirectResponse(url="/docs")
+
 @app.get("/health")
 async def health_check(request: Request):
     """Health check endpoint."""
