@@ -352,6 +352,9 @@ The container booted successfully in 1m 9s from commit `9a068a1`, validating cro
 ![Render Live Deployment](screenshots/m24_render_live.PNG)
 *Figure 11.1: Render Cloud deployment console confirming status: `Deploy succeeded | Live`.*
 
+![Render Build & Live Log Verification](screenshots/m25_render_succeeded.PNG)
+*Figure 11.2: Render Cloud multi-stage build logs verifying successful container layer caching, packaging, and live auto-deploy.*
+
 #### Step 11.2: Real-World Public API Verification (Empirical Proof)
 The live endpoint was tested over public HTTPS:
 
