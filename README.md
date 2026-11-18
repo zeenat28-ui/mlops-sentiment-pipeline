@@ -199,6 +199,56 @@ python src/05_promote.py --model project1.mlops_sentiment.sentiment_classifier \
   --metric gate_tweet_acc --min-improvement 0.005 --dry-run
 ```
 
+### Additional Production Components
+
+1. **Fail-Closed Serving & Container Hardening (`serving/app.py`, `k8s/base/deployment.yaml`)**
+   - Verifies SHA-256 checksums of all artifacts listed in `model/manifest.json` on startup (with LF/CRLF normalization) and rejects unmanifested files (`sys.exit(1)` on mismatch).
+   - `/health` returns HTTP `200` only when `app.state.model` is loaded and HTTP `503` otherwise so unready pods never receive traffic.
+   - Pod security context enforces non-root execution (UID/GID 10001), drops all Linux capabilities (`capabilities.drop: [ALL]`), disables privilege escalation, and bounds resources (`250m`–`1000m` CPU, `512Mi`–`1Gi` RAM) alongside Horizontal Pod Autoscaling (`2`–`10` replicas, CPU `70%`, memory `90%`).
+
+2. **Declarative GitOps & Argo Rollouts Canary Delivery (`k8s/argocd/application.yaml`, `k8s/base/deployment.yaml`)**
+   - Argo CD (`sentiment-api-gitops`) reconciles `k8s/overlays/kind` on `main` into namespace `mlops` with `prune: true` and `selfHeal: true`.
+   - Managed as an `argoproj.io/v1alpha1` `Rollout` with staged traffic weights (`25% -> pause 20s -> 50% -> pause -> 100%`).
+   - Verified canary promotion from `v1.0.0` (`revision: 1`) to `v1.1.0` (`revision: 4`), followed by an intentional broken release (`v9.9.9-broken`, `revision: 5`, `ImagePullBackOff`) aborted and rolled back to `v1.1.0`.
+
+3. **Prometheus Instrumentation, `PodMonitor` & `k6` SLO Verification (`k8s/monitoring/podmonitor.yaml`, `tests/load/k6-sentiment.js`)**
+   - Exposes `http_requests_total`, `prediction_latency_seconds` histogram, and `sentiment_predictions_total` at `/metrics`, scraped every `15s` by `kube-prometheus-stack`.
+   - Load-tested at 20 concurrent VUs for 30s (`4,305` requests at `142.93 req/s`): `avg = 38.63ms`, `p90 = 87.09ms`, `p95 = 113.82ms` (against `< 200ms` SLO), and `0.00%` failed requests (`8,610 / 8,610` checks passed).
+
+4. **Secretless CI/CD Supply Chain (`.github/workflows/gitops-cd-oidc.yml`)**
+   - Authenticates to GHCR via ephemeral `GITHUB_TOKEN` and OIDC (`id-token: write`) with zero static registry or cloud credentials.
+   - Builds immutable `sha-<commit>` images, signs digests keyless via Sigstore Cosign, and updates `k8s/base/deployment.yaml` for Argo CD sync.
+
+5. **Closed-Loop PSI Drift Detection & Retrain Trigger (`monitoring/drift_detector.py`, `.github/workflows/drift-retrain-loop.yml`)**
+   - Scheduled every 6 hours (`cron: "0 */6 * * *"`) to evaluate Population Stability Index (`threshold = 0.20`).
+   - Verified healthy baseline (`PSI = 0.0 -> NO_ACTION_HEALTHY`) and simulated concept/label shift (`PSI = 0.7571 -> TRIGGER_RETRAIN_AND_CANARY`). The workflow records a retrain trigger; a retraining job is not launched by this workflow.
+
+### Extended Repository Artifacts
+
+```text
+.github/workflows/
+  gitops-cd-oidc.yml          # OIDC build, Cosign keyless signing & GitOps promotion
+  drift-retrain-loop.yml      # Scheduled 6h PSI drift check & retrain trigger
+k8s/
+  argocd/application.yaml     # Argo CD GitOps Application (prune + selfHeal)
+  base/                       # Argo Rollout (Canary), Service, HPA, Kustomization
+  monitoring/podmonitor.yaml  # Prometheus PodMonitor scraping /metrics
+  overlays/kind/              # Local kind cluster Kustomize overlay
+monitoring/
+  drift_detector.py           # PSI drift calculator and retrain decision engine
+tests/load/
+  k6-sentiment.js             # k6 SLO latency and error-rate verification script
+evidence/                     # Raw CLI, k6, Prometheus, Argo, and drift verification logs
+RUNBOOK.md                    # Incident response and rollback procedures
+```
+
+### Additional Operational Findings
+
+- **Kustomize `commonLabels` Selector Drift**: Legacy `commonLabels` in `k8s/base/kustomization.yaml` injected extra metadata labels into `sentiment-api-svc` selectors that did not exist on Rollout pod templates, leaving Service endpoints empty until `commonLabels` was removed (`b611edd`).
+- **CRD Annotation Size Ceiling**: Applying `rollouts.argoproj.io` required Server-Side Apply (`kubectl apply --server-side`) because client-side `last-applied-configuration` annotations exceeded Kubernetes' `262144`-byte limit.
+- **GitOps Precedence During Rollback**: With Argo CD `selfHeal: true` active, imperative rollbacks must target an explicit stable revision (`--to-revision`) alongside Git manifest alignment so self-heal does not re-apply a broken tag.
+- **HPA Memory Threshold Tuning**: Python ML runtime baseline (~435Mi on a `512Mi` request) triggered premature scaling at `80%` memory utilization (`85%/80%`); raising the memory threshold to `90%` eliminated idle scale-up while preserving burst capacity.
+
 ## Author
 
 Zeenat Riaz
