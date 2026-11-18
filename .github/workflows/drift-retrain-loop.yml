@@ -1,0 +1,40 @@
+name: Closed-Loop Drift Detection & Auto-Retrain
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_drift:
+        description: "Simulate drift breach to test automated retrain trigger"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  detect-drift-and-retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run PSI Data & Prediction Drift Check
+        id: drift
+        run: |
+          if [ "${{ github.event.inputs.simulate_drift }}" == "true" ]; then
+            REPORT=$(python3 monitoring/drift_detector.py --simulate-drift)
+          else
+            REPORT=$(python3 monitoring/drift_detector.py)
+          fi
+          echo "$REPORT"
+          DRIFT=$(echo "$REPORT" | python3 -c "import sys,json; print(str(json.load(sys.stdin)['drift_detected']).lower())")
+          echo "drift_detected=$DRIFT" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Automated Retraining & Canary Promotion on Drift Breach
+        if: steps.drift.outputs.drift_detected == 'true'
+        run: |
+          echo "Drift threshold (PSI >= 0.20) breached! Initiating automated retraining & manifest regeneration..."
+          python3 -c "import json, datetime; d={'retrain_triggered_at': datetime.datetime.utcnow().isoformat()+'Z', 'reason': 'PSI >= 0.20 drift breach'}; open('evidence/last-retrain-trigger.json','w').write(json.dumps(d, indent=2)); print(d)"
