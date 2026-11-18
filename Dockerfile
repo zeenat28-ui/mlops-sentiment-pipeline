@@ -12,10 +12,10 @@ COPY serving/requirements-api.txt .
 COPY model/requirements.txt model-requirements.txt
 
 # Combine and install dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-api.txt && \
+RUN pip --default-timeout=120 --retries=10 install --no-cache-dir --upgrade pip && \
+    pip --default-timeout=120 --retries=10 install --no-cache-dir -r requirements-api.txt && \
     if [ -f model-requirements.txt ]; then \
-        pip install --no-cache-dir -r model-requirements.txt; \
+        pip --default-timeout=120 --retries=10 install --no-cache-dir -r model-requirements.txt; \
     fi
 
 # Production stage

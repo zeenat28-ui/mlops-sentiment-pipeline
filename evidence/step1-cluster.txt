@@ -1,0 +1,9 @@
+NAME                                 READY   STATUS    RESTARTS   AGE    IP           NODE                  NOMINATED NODE   READINESS GATES
+pod/sentiment-api-7f9b5b7b9c-mh4q4   1/1     Running   0          113s   10.244.0.7   mlops-control-plane   <none>           <none>
+pod/sentiment-api-7f9b5b7b9c-w8f7v   1/1     Running   0          113s   10.244.0.8   mlops-control-plane   <none>           <none>
+
+NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE    SELECTOR
+service/sentiment-api-svc   ClusterIP   10.96.108.155   <none>        80/TCP    113s   app=sentiment-api,environment=production,managed-by=gitops,project=mlops-sentiment-pipeline,tier=inference
+
+NAME                                                    REFERENCE                  TARGETS                        MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/sentiment-api-hpa   Deployment/sentiment-api   cpu: 1%/70%, memory: 85%/80%   2         10        2          113s

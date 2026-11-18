@@ -1,0 +1,57 @@
+Name:                   sentiment-api
+Namespace:              mlops
+CreationTimestamp:      Wed, 18 Nov 2026 20:12:29 +0000
+Labels:                 app=sentiment-api
+                        environment=production
+                        managed-by=gitops
+                        project=mlops-sentiment-pipeline
+                        tier=inference
+                        version=v1
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=sentiment-api,environment=production,managed-by=gitops,project=mlops-sentiment-pipeline,tier=inference
+Replicas:               2 desired | 2 updated | 2 total | 2 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  0 max unavailable, 1 max surge
+Pod Template:
+  Labels:       app=sentiment-api
+                environment=production
+                managed-by=gitops
+                project=mlops-sentiment-pipeline
+                tier=inference
+                version=v1
+  Annotations:  prometheus.io/path: /metrics
+                prometheus.io/port: 8000
+                prometheus.io/scrape: true
+  Containers:
+   sentiment-api:
+    Image:      ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.0.0
+    Port:       8000/TCP (http)
+    Host Port:  0/TCP (http)
+    Limits:
+      cpu:     1
+      memory:  1Gi
+    Requests:
+      cpu:      250m
+      memory:   512Mi
+    Liveness:   http-get http://:8000/health delay=15s timeout=3s period=10s successThreshold=1 failureThreshold=3
+    Readiness:  http-get http://:8000/health delay=5s timeout=2s period=5s successThreshold=1 failureThreshold=2
+    Environment:
+      PORT:             8000
+      WEB_CONCURRENCY:  2
+      ENVIRONMENT:      production
+    Mounts:             <none>
+  Volumes:              <none>
+  Node-Selectors:       <none>
+  Tolerations:          <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   sentiment-api-7f9b5b7b9c (2/2 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  113s  deployment-controller  Scaled up replica set sentiment-api-7f9b5b7b9c to 2
