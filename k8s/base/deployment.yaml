@@ -39,7 +39,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: sentiment-api
-          image: ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.0.0
+          image: ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
