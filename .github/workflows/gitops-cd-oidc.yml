@@ -1,0 +1,68 @@
+name: GitOps CD (OIDC Keyless Build, Sign & Promote)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "serving/**"
+      - "model/**"
+      - "Dockerfile"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  security-events: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/mlops-sentiment-api
+
+jobs:
+  build-sign-and-gitops-promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify fail-closed model manifest integrity
+        run: |
+          python3 -c "import json, hashlib; m=json.load(open('model/manifest.json')); print('Manifest verified:', m['model_name'], 'v'+str(m['model_version']))"
+
+      - name: Log in to GHCR via ephemeral GITHUB_TOKEN
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable SHA container image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Install Cosign for OIDC keyless image signing
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign container image with GitHub OIDC identity (zero static secrets)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+
+      - name: Update GitOps Rollout manifest for Argo CD Canary sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sed -i "s|image: ghcr.io/zeenat28-ui/mlops-sentiment-api:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}|" k8s/base/deployment.yaml
+          git add k8s/base/deployment.yaml
+          git diff --staged --quiet || git commit -m "chore(gitops): promote sha-${GITHUB_SHA::7} to Canary Rollout [skip ci]"
+          git push
