@@ -1,0 +1,54 @@
+Name:            sentiment-api
+Namespace:       mlops
+Status:          [32m✔[0m Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+  ActualWeight:  100
+Images:          ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.1.0 ([32mstable[0m)
+Replicas:
+  Desired:       2
+  Current:       2
+  Updated:       2
+  Ready:         2
+  Available:     2
+
+NAME                                       KIND        STATUS         AGE    INFO
+⟳ sentiment-api                            Rollout     [32m✔[0m Healthy      5m16s  
+├──# revision:4                                                              
+│  └──⧉ [32msentiment-api-59cfbf4684[0m           ReplicaSet  [32m✔[0m Healthy      3m36s  [32mstable[0m
+│     ├──□ sentiment-api-59cfbf4684-klnhz  Pod         [32m✔[0m Running      3m36s  ready:1/1
+│     └──□ sentiment-api-59cfbf4684-spnl5  Pod         [32m✔[0m Running      32s    ready:1/1
+├──# revision:3                                                              
+│  └──⧉ sentiment-api-656bcd5f77           ReplicaSet  [0m•[0m ScaledDown   12s    
+└──# revision:1                                                              
+   └──⧉ sentiment-api-5c6db84549           ReplicaSet  [0m•[0m ScaledDown   5m16s  
+      └──□ sentiment-api-5c6db84549-8r9z4  Pod         [94m◌[0m Terminating  5m16s  ready:1/1
+Name:            sentiment-api
+Namespace:       mlops
+Status:          [94m◌[0m Progressing
+Message:         more replicas need to be updated
+Strategy:        Canary
+  Step:          0/4
+  SetWeight:     25
+  ActualWeight:  0
+Images:          ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.1.0 ([32mstable[0m)
+                 ghcr.io/zeenat28-ui/mlops-sentiment-api:v9.9.9-broken ([33mcanary[0m)
+Replicas:
+  Desired:       2
+  Current:       3
+  Updated:       1
+  Ready:         2
+  Available:     2
+
+NAME                                       KIND        STATUS              AGE    INFO
+⟳ sentiment-api                            Rollout     [94m◌[0m Progressing       6m47s  
+├──# revision:5                                                                   
+│  └──⧉ [33msentiment-api-656bcd5f77[0m           ReplicaSet  [94m◌[0m Progressing       103s   [33mcanary[0m
+│     └──□ sentiment-api-656bcd5f77-hvkpd  Pod         [31m⚠[0m ImagePullBackOff  90s    ready:0/1
+├──# revision:4                                                                   
+│  └──⧉ [32msentiment-api-59cfbf4684[0m           ReplicaSet  [32m✔[0m Healthy           5m7s   [32mstable[0m
+│     ├──□ sentiment-api-59cfbf4684-klnhz  Pod         [32m✔[0m Running           5m7s   ready:1/1
+│     └──□ sentiment-api-59cfbf4684-spnl5  Pod         [32m✔[0m Running           2m3s   ready:1/1
+└──# revision:1                                                                   
+   └──⧉ sentiment-api-5c6db84549           ReplicaSet  [0m•[0m ScaledDown        6m47s  

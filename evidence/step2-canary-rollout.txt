@@ -1,0 +1,25 @@
+Name:            sentiment-api
+Namespace:       mlops
+Status:          [32m✔[0m Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+  ActualWeight:  100
+Images:          ghcr.io/zeenat28-ui/mlops-sentiment-api:v1.1.0 ([32mstable[0m)
+Replicas:
+  Desired:       2
+  Current:       2
+  Updated:       2
+  Ready:         2
+  Available:     2
+
+NAME                                       KIND        STATUS        AGE    INFO
+⟳ sentiment-api                            Rollout     [32m✔[0m Healthy     7m48s  
+├──# revision:6                                                             
+│  └──⧉ [32msentiment-api-59cfbf4684[0m           ReplicaSet  [32m✔[0m Healthy     6m8s   [32mstable[0m
+│     ├──□ sentiment-api-59cfbf4684-klnhz  Pod         [32m✔[0m Running     6m8s   ready:1/1
+│     └──□ sentiment-api-59cfbf4684-spnl5  Pod         [32m✔[0m Running     3m4s   ready:1/1
+├──# revision:5                                                             
+│  └──⧉ sentiment-api-656bcd5f77           ReplicaSet  [0m•[0m ScaledDown  2m44s  
+└──# revision:1                                                             
+   └──⧉ sentiment-api-5c6db84549           ReplicaSet  [0m•[0m ScaledDown  7m48s  
