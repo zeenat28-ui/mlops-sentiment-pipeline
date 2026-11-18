@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: sentiment-api-monitor
+  namespace: monitoring
+  labels:
+    app: sentiment-api
+spec:
+  namespaceSelector:
+    matchNames:
+      - mlops
+  selector:
+    matchLabels:
+      app: sentiment-api
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
