@@ -1,6 +1,7 @@
 """
 FastAPI app serving sentiment classifier model.
 Fail-closed: container won't start if model files are tampered with.
+Exposes Prometheus /metrics for Argo Rollouts canary analysis and SLO monitoring.
 """
 import hashlib
 import json
@@ -12,19 +13,34 @@ from pathlib import Path
 
 import mlflow.pyfunc
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field, field_validator
 
-# Constants
 MODEL_DIR = Path("model")
 MANIFEST_PATH = MODEL_DIR / "manifest.json"
 
-# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Pydantic models
+# Prometheus Metrics
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status_code"],
+)
+PREDICTION_LATENCY = Histogram(
+    "prediction_latency_seconds",
+    "Model inference latency in seconds",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+)
+PREDICTIONS_TOTAL = Counter(
+    "sentiment_predictions_total",
+    "Total predictions by sentiment class",
+    ["sentiment", "model_version"],
+)
+
 class PredictRequest(BaseModel):
     texts: list[str] = Field(..., min_length=1, max_length=100)
 
@@ -57,7 +73,6 @@ class ModelInfoResponse(BaseModel):
     manifest_hash: str
 
 def verify_model_integrity() -> dict:
-    """Verify all model files against manifest."""
     if not MANIFEST_PATH.exists():
         logger.error(f"Manifest not found: {MANIFEST_PATH}")
         sys.exit(1)
@@ -65,8 +80,10 @@ def verify_model_integrity() -> dict:
     with open(MANIFEST_PATH) as f:
         manifest = json.load(f)
 
-    logger.info(f"Verifying model: {manifest['model_name']} "
-                f"version {manifest['model_version']} alias {manifest['model_alias']}")
+    logger.info(
+        f"Verifying model: {manifest['model_name']} "
+        f"version {manifest['model_version']} alias {manifest['model_alias']}"
+    )
 
     for file_info in manifest["files"]:
         file_path = MODEL_DIR / file_info["path"]
@@ -78,23 +95,19 @@ def verify_model_integrity() -> dict:
             content = f.read()
 
         raw_hash = hashlib.sha256(content).hexdigest()
-        # Cross-platform normalization for text metadata files (handles CRLF on Windows vs LF on Linux)
         lf_hash = hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
         crlf_hash = hashlib.sha256(content.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")).hexdigest()
-        valid_hashes = {raw_hash, lf_hash, crlf_hash}
-
-        if file_info["sha256"] not in valid_hashes:
-            logger.error(f"Hash mismatch for {file_path}: "
-                         f"expected {file_info['sha256'][:16]}..., got {raw_hash[:16]}...")
+        if file_info["sha256"] not in {raw_hash, lf_hash, crlf_hash}:
+            logger.error(f"Hash mismatch for {file_path}")
             sys.exit(1)
 
-        logger.debug(f"✓ {file_path} verified")
-
-    # Check for extra files not in manifest
-    all_files = {p.relative_to(MODEL_DIR) for p in MODEL_DIR.rglob("*") if p.is_file() and p.resolve() != MANIFEST_PATH.resolve()}
+    all_files = {
+        p.relative_to(MODEL_DIR)
+        for p in MODEL_DIR.rglob("*")
+        if p.is_file() and p.resolve() != MANIFEST_PATH.resolve()
+    }
     manifest_files = {Path(info["path"]) for info in manifest["files"]}
     extra_files = all_files - manifest_files
-
     if extra_files:
         logger.error(f"Extra files found in model directory: {extra_files}")
         sys.exit(1)
@@ -104,8 +117,6 @@ def verify_model_integrity() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model on startup."""
-    # Verify and load model
     manifest = verify_model_integrity()
     try:
         import mlflow.sklearn
@@ -115,96 +126,83 @@ async def lifespan(app: FastAPI):
     app.state.manifest = manifest
     logger.info(f"Model loaded: {manifest['model_name']} v{manifest['model_version']}")
     yield
-    # Cleanup on shutdown if needed
     app.state.model = None
     app.state.manifest = None
 
-# FastAPI app with lifespan
 app = FastAPI(
     title="Sentiment Classifier API",
     description="Predict sentiment (1=positive, 0=negative) for text inputs",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
-# Middleware
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
+async def metrics_and_timing_middleware(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
-    process_time = (time.time() - start_time) * 1000
-    response.headers["X-Process-Time-Ms"] = str(round(process_time, 2))
+    process_time_ms = (time.time() - start_time) * 1000
+    response.headers["X-Process-Time-Ms"] = str(round(process_time_ms, 2))
+    if request.url.path != "/metrics":
+        REQUEST_COUNT.labels(
+            method=request.method,
+            endpoint=request.url.path,
+            status_code=str(response.status_code),
+        ).inc()
     return response
 
-# Routes
 @app.get("/", include_in_schema=False)
 async def root():
-    """Redirect root to interactive Swagger UI documentation."""
     return RedirectResponse(url="/docs")
 
 @app.get("/health")
 async def health_check(request: Request):
-    """Health check endpoint."""
-    model_loaded = request.app.state.model is not None
-    return {"status": "healthy" if model_loaded else "unhealthy", "model_loaded": model_loaded}
+    model_loaded = getattr(request.app.state, "model", None) is not None
+    if not model_loaded:
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "model_loaded": False})
+    return {"status": "healthy", "model_loaded": True}
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/model-info")
 async def model_info(request: Request) -> ModelInfoResponse:
-    """Get model metadata."""
     manifest = request.app.state.manifest
     return ModelInfoResponse(
         model_name=manifest["model_name"],
         model_version=manifest["model_version"],
         model_alias=manifest["model_alias"],
         source_run_id=manifest["source_run_id"],
-        manifest_hash=hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()[:16]
+        manifest_hash=hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()[:16],
     )
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest, http_request: Request):
-    """
-    Predict sentiment for texts.
-    
-    Returns predictions: 1=positive, 0=negative.
-    """
     try:
         model = http_request.app.state.model
         if model is None:
             raise HTTPException(status_code=503, detail="Model not loaded")
-        
+
         manifest = http_request.app.state.manifest
-        
-        # Prepare input DataFrame (same format as Databricks smoke test)
         input_df = pd.DataFrame({"text": request.texts})
-        
-        # Predict
-        predictions = model.predict(input_df)
-        
-        # Convert to int (ensure 0/1)
-        predictions = [int(pred) for pred in predictions]
-        
+
+        with PREDICTION_LATENCY.time():
+            raw_preds = model.predict(input_df)
+
+        predictions = [int(pred) for pred in raw_preds]
+        for pred in predictions:
+            PREDICTIONS_TOTAL.labels(
+                sentiment="positive" if pred == 1 else "negative",
+                model_version=str(manifest["model_version"]),
+            ).inc()
+
         return PredictResponse(
             predictions=predictions,
             model_version=manifest["model_version"],
-            model_alias=manifest["model_alias"]
+            model_alias=manifest["model_alias"],
         )
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail="Prediction failed")
-
-# Error handlers
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail}
-    )
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"}
-    )

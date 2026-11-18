@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sentiment-api-gitops
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/zeenat28-ui/mlops-sentiment-pipeline.git
+    targetRevision: main
+    path: k8s/overlays/kind
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
