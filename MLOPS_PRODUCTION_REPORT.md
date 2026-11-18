@@ -403,15 +403,15 @@ curl -X POST "https://mlops-sentiment-pipeline.onrender.com/predict" \
 
 Moving beyond standalone containerization, the microservice is fully packaged for production orchestration on Kubernetes with automated elasticity and high availability.
 
-#### Step 12.1: Hardened Pod Specification & Zero-Downtime Rolling Updates
-The deployment configuration (`k8s/deployment.yaml`) enforces production-grade security and reliability:
-* **Zero-Downtime Deployment:** Configured with `strategy.rollingUpdate` (`maxSurge: 1`, `maxUnavailable: 0`) guaranteeing continuous availability during image upgrades.
+#### Step 12.1: Hardened Pod Specification & Canary Rollouts
+The Argo Rollouts configuration (`k8s/base/deployment.yaml`) enforces production-grade security and reliability:
+* **Canary Delivery:** Uses staged traffic weights of 25% and 50%, with pauses before promotion to 100%.
 * **Non-Root Security Context:** Restricts execution to non-root user `10001` with `allowPrivilegeEscalation: false` and all Linux capabilities dropped (`drop: ["ALL"]`).
 * **Liveness & Readiness Probes:** Decoupled HTTP health probes on `/health` prevent premature traffic routing until model weights are verified in memory.
 * **Resource Quotas:** Requests guaranteed at 250m CPU / 512Mi RAM, capped at 1000m CPU / 1Gi RAM per replica.
 
 #### Step 12.2: Horizontal Pod Autoscaler (HPA) & Ingress Routing
-The horizontal auto-scaler (`k8s/hpa.yaml`) dynamically adjusts replica count between **2 and 10 pods** based on compute utilization targets (70% CPU, 80% Memory). Traffic is managed via a ClusterIP service (`k8s/service.yaml`) and TLS-terminated NGINX Ingress controller (`k8s/ingress.yaml`).
+The horizontal auto-scaler (`k8s/base/hpa.yaml`) dynamically adjusts replica count between **2 and 10 pods** based on compute utilization targets (70% CPU, 90% memory). Traffic is managed via a ClusterIP service (`k8s/base/service.yaml`) and NGINX Ingress (`k8s/base/ingress.yaml`).
 
 ![Kubernetes Production Deployment](screenshots/m26_k8s_deployment.PNG)  
 *Figure 12.1: Production Kubernetes console verifying namespace creation, multi-pod allocation across availability zones, ClusterIP service binding, and active Horizontal Pod Autoscaler (HPA).*
@@ -452,6 +452,56 @@ A comprehensive production dashboard (`monitoring/grafana-dashboard.json`) provi
 
 ---
 
+### Phase 15: Kubernetes Runtime Health & Autoscaling Verification
+
+The cluster runtime was checked with `kubectl` to verify ready pods, ClusterIP service discovery, HPA state, and the serving API's `/health`, `/model-info`, and `/predict` endpoints.
+
+![Kubernetes Runtime Health](screenshots/k8s_runtime_health.jpg)
+
+*Figure 15.1: Runtime snapshot showing two ready API pods, the ClusterIP service, a healthy model-loaded response, `test.model` metadata, and a successful prediction. The HPA memory target shown in this earlier snapshot was 80%; it was subsequently tuned to the current 90% target to avoid premature scale-up.*
+
+---
+
+### Phase 16: Argo CD GitOps & Canary Rollout Verification
+
+Argo CD reported the `sentiment-api-gitops` Application as `Synced` and `Healthy`. The Rollout evidence shows `v1.1.0` stable at revision 4 and the intentionally broken `v9.9.9-broken` revision 5 aborted and scaled down. The same capture includes live `/metrics` output.
+
+![Argo CD and Canary Rollout Verification](screenshots/argocd_rollout_verification.jpg)
+
+*Figure 16.1: GitOps sync and healthy canary state, with stable `v1.1.0`, aborted broken revision, and Prometheus counters exposed by the API.*
+
+---
+
+### Phase 17: k6 SLO Load Test & Prometheus Scrape Verification
+
+The k6 run used 20 looping virtual users for 30 seconds. It completed 4,305 requests at 142.93 requests/second, with p95 latency of 113.82 ms against the 200 ms threshold and no failed requests. Prometheus reported both PodMonitor targets as healthy.
+
+![k6 SLO and Prometheus Targets](screenshots/k6_prometheus_slo.jpg)
+
+*Figure 17.1: k6 result with all 8,610 checks passing and 0% request failures, alongside healthy Prometheus scrape targets.*
+
+---
+
+### Phase 18: Secretless GitOps CI/CD Configuration Verification
+
+The GitOps workflow configuration was parsed and checked for its GitHub Actions permissions, including `id-token: write`; the captured validation reports keyless Cosign signing and no static registry or cloud secrets.
+
+![GitOps OIDC Workflow Verification](screenshots/gitops_oidc_validation.jpg)
+
+*Figure 18.1: Workflow YAML validation and security configuration check for OIDC keyless image signing. This screenshot verifies workflow configuration, not a completed image publication or signing run.*
+
+---
+
+### Phase 19: PSI Drift Detection & Retrain Trigger Evidence
+
+The drift detector returned `NO_ACTION_HEALTHY` for the baseline (`PSI = 0.0`) and `TRIGGER_RETRAIN_AND_CANARY` for simulated drift (`PSI = 0.7571`, threshold `0.2`). The current scheduled workflow records a retrain trigger; it does not itself execute a retraining job.
+
+![PSI Drift Detection Results](screenshots/psi_drift_trigger.jpg)
+
+*Figure 19.1: Healthy-baseline and simulated-drift PSI outputs, including the retrain-and-canary action signal.*
+
+---
+
 ## 4. Master MLOps Verification Scorecard
 
 | # | MLOps Capability | Requirement | Method of Verification | Status |
@@ -470,9 +520,12 @@ A comprehensive production dashboard (`monitoring/grafana-dashboard.json`) provi
 | **12** | **Containerized Serving** | Cryptographic tamper-proofing | SHA-256 `manifest.json` fail-closed verification | Verified |
 | **13** | **High Concurrency & Scale** | Support hundreds of thousands of users | **193.8 RPS**, 0% error rate, **~16.7M daily requests** | Verified |
 | **14** | **Live Cloud Deployment** | Public HTTPS inference endpoint | Live at `https://mlops-sentiment-pipeline.onrender.com` (`m24_render_live.PNG`) | Verified & Live |
-| **15** | **Kubernetes Orchestration**| Declarative K8s deployment & HPA | `k8s/` manifests with 2-10 Pod HPA scaling (`m26_k8s_deployment.PNG`) | Verified |
+| **15** | **Kubernetes Orchestration**| Declarative K8s deployment & HPA | `k8s/` manifests with 2-10 Pod HPA scaling (`m26_k8s_deployment.PNG`, `k8s_runtime_health.jpg`) | Verified |
 | **16** | **Infrastructure as Code** | Codified multi-AZ cloud architecture | Terraform modules for AWS VPC, EKS & ECR (`m27_terraform_plan.PNG`) | Verified |
-| **17** | **Metrics & Observability** | Prometheus scraping & Grafana UI | Prometheus scrape configs, alert rules & dashboard (`m28_grafana_monitoring.PNG`) | Verified |
+| **17** | **Metrics & Observability** | Prometheus scraping & Grafana UI | Prometheus scrape configs, alert rules, dashboard & k6 SLO evidence (`m28_grafana_monitoring.PNG`, `k6_prometheus_slo.jpg`) | Verified |
+| **18** | **GitOps Canary Delivery** | Argo CD sync and safe Rollout promotion | Application health, stable and aborted revisions (`argocd_rollout_verification.jpg`) | Verified |
+| **19** | **Secretless Image Signing** | OIDC-based keyless signing configuration | Workflow permission and secret checks (`gitops_oidc_validation.jpg`) | Config validated |
+| **20** | **Drift Retrain Trigger** | PSI threshold and retrain action signal | Healthy and simulated-drift outputs (`psi_drift_trigger.jpg`) | Verified |
 
 ---
 
